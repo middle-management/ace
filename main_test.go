@@ -415,7 +415,7 @@ func TestIntegration(t *testing.T) {
 		_ = os.MkdirAll(coverDir, 0755)
 	}
 	for _, tt := range tests {
-		t.Run(strings.ReplaceAll(strings.Join(tt.Args, " "), "/", "_"), func(t *testing.T) {
+		t.Run(sanitizeTestName(strings.Join(tt.Args, " ")), func(t *testing.T) {
 			if tt.Args[0] == "ace" {
 				tt.Args[0] = os.Getenv("ACE_TESTBIN")
 			}
@@ -444,4 +444,37 @@ func TestIntegration(t *testing.T) {
 		}
 		test.Snapshot(t, out)
 	})
+}
+
+func sanitizeTestName(name string) string {
+	// Replace problematic characters with underscores
+	replacements := []struct {
+		old string
+		new string
+	}{
+		{`"`, "_quote_"},     // Double quotes
+		{`'`, "_squote_"},    // Single quotes
+		{`\`, "_slash_"},     // Backslashes
+		{`$`, "_dollar_"},    // Dollar signs
+		{`;`, "_semicolon_"}, // Semicolons
+		{`|`, "_pipe_"},      // Pipes
+		{`<`, "_lt_"},        // Less than
+		{`>`, "_gt_"},        // Greater than
+		{`*`, "_star_"},      // Asterisks
+		{`?`, "_qmark_"},     // Question marks
+		{`:`, "_colon_"},     // Colons
+		{`/`, "_"},
+	}
+
+	result := name
+	for _, r := range replacements {
+		result = strings.ReplaceAll(result, r.old, r.new)
+	}
+
+	// Limit length to avoid potential path length issues
+	if len(result) > 100 {
+		result = result[:100]
+	}
+
+	return result
 }
