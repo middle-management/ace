@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	filippo.io/age v1.2.1
-	github.com/alexflint/go-arg v1.5.1
+	github.com/alexflint/go-arg v1.6.0
 	golang.org/x/crypto v0.40.0
 )
 
