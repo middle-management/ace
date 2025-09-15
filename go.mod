@@ -1,6 +1,6 @@
 module github.com/middle-management/ace
 
-go 1.24.0
+go 1.25.1
 
 require (
 	filippo.io/age v1.2.1
