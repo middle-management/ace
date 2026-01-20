@@ -46,6 +46,7 @@ func TestAce(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+
 		{
 			buf := &bytes.Buffer{}
 			output = buf
@@ -329,6 +330,41 @@ func TestAce(t *testing.T) {
 			test.Snapshot(t, buf.Bytes())
 		})
 	})
+}
+
+func TestMultilineStdin(t *testing.T) {
+	os.Remove("testdata/.env_multiline.ace")
+
+	// Test multi-line quoted value via stdin (e.g., PEM certificates)
+	input = strings.NewReader("KEY1=value1\nCERT=\"-----BEGIN CERTIFICATE-----\nMIIBkTCB+w==\n-----END CERTIFICATE-----\"\nKEY2=value2")
+	cmd := &Set{EnvFile: "testdata/.env_multiline.ace", RecipientFiles: []string{"testdata/recipients1.txt"}}
+	err := cmd.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	buf := &bytes.Buffer{}
+	output = buf
+	getCmd := &Get{EnvFile: "testdata/.env_multiline.ace", Identities: []string{"testdata/identity1"}}
+	err = getCmd.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := buf.String()
+	// Verify that CERT contains the full multi-line PEM
+	if !strings.Contains(got, "-----BEGIN CERTIFICATE-----") {
+		t.Errorf("expected CERT to contain BEGIN marker, got: %s", got)
+	}
+	if !strings.Contains(got, "-----END CERTIFICATE-----") {
+		t.Errorf("expected CERT to contain END marker, got: %s", got)
+	}
+	if !strings.Contains(got, "KEY1=value1") {
+		t.Errorf("expected KEY1=value1, got: %s", got)
+	}
+	if !strings.Contains(got, "KEY2=value2") {
+		t.Errorf("expected KEY2=value2, got: %s", got)
+	}
 }
 
 func TestIntegration(t *testing.T) {

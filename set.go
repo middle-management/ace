@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"crypto/rand"
 	"encoding/base32"
@@ -92,16 +91,28 @@ func (cmd *Set) Run() error {
 
 	pairs := cmd.EnvPairs
 	if len(pairs) == 0 {
-		s := bufio.NewScanner(input)
-		for s.Scan() {
-			line := strings.TrimSpace(s.Text())
-
-			if strings.HasPrefix(line, "#") {
-				continue
+		data, _ := io.ReadAll(input)
+		var cur strings.Builder
+		var inQuote byte
+		for _, c := range data {
+			if inQuote == 0 && c == '\n' {
+				line := cur.String()
+				cur.Reset()
+				trimmed := strings.TrimSpace(line)
+				if trimmed == "" || trimmed[0] == '#' || !strings.Contains(line, "=") {
+					continue
+				}
+				pairs = append(pairs, line)
+			} else {
+				cur.WriteByte(c)
+				if inQuote == 0 && (c == '"' || c == '\'') {
+					inQuote = c
+				} else if c == inQuote {
+					inQuote = 0
+				}
 			}
-			if !strings.Contains(line, "=") {
-				continue
-			}
+		}
+		if line := cur.String(); strings.TrimSpace(line) != "" && strings.Contains(line, "=") {
 			pairs = append(pairs, line)
 		}
 	}
