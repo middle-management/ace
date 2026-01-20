@@ -50,7 +50,8 @@ func readEnvFile(src io.Reader, identities []age.Identity, keepQuotes bool) ([]s
 
 			// decrypt the block key using identities
 			r, err = age.Decrypt(r, identities...)
-			if err != nil && err.Error() == "no identity matched any of the recipients" {
+			var noMatch *age.NoIdentityMatchError
+			if errors.As(err, &noMatch) {
 				// try next env block
 				aead = nil
 				continue
@@ -173,12 +174,12 @@ func UnescapeValue(value string) (string, error) {
 	}
 
 	trimmed := strings.TrimLeftFunc(value, unicode.IsSpace)
-    if len(trimmed) == 0 {
-        return value, nil
-    }
-    if trimmed[0] != '\'' && trimmed[0] != '"' {
-        return value, nil
-    }
+	if len(trimmed) == 0 {
+		return value, nil
+	}
+	if trimmed[0] != '\'' && trimmed[0] != '"' {
+		return value, nil
+	}
 
 	var unescaped strings.Builder
 	var i int
