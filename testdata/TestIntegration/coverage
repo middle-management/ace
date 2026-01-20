@@ -1,9 +1,9 @@
 github.com/middle-management/ace/env.go:22:			*Env.Run		80.0%
 github.com/middle-management/ace/get.go:15:			*Get.Run		90.5%
-github.com/middle-management/ace/main.go:31:			readEnvFile		86.5%
-github.com/middle-management/ace/main.go:122:			readIdentities		78.6%
-github.com/middle-management/ace/main.go:170:			UnescapeValue		80.8%
-github.com/middle-management/ace/main.go:260:			main			100.0%
+github.com/middle-management/ace/main.go:31:			readEnvFile		86.8%
+github.com/middle-management/ace/main.go:123:			readIdentities		78.6%
+github.com/middle-management/ace/main.go:171:			UnescapeValue		80.8%
+github.com/middle-management/ace/main.go:261:			main			100.0%
 github.com/middle-management/ace/set.go:22:			*Set.Run		82.8%
 github.com/middle-management/ace/version.go:14:			*Version.Run		60.0%
 github.com/middle-management/ace/version.go:23:			getVersion		0.0%
@@ -11,4 +11,4 @@ github.com/middle-management/ace/internal/proc/proc.go:8:	SetupSysProcAttr	0.0%
 github.com/middle-management/ace/internal/proc/proc.go:12:	ForwardSignal		0.0%
 github.com/middle-management/ace/internal/proc/proc_unix.go:12:	setupSysProcAttr	0.0%
 github.com/middle-management/ace/internal/proc/proc_unix.go:18:	forwardSignal		0.0%
-total								(statements)		76.6%
+total								(statements)		76.7%
