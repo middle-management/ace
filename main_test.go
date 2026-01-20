@@ -419,6 +419,10 @@ func TestIntegration(t *testing.T) {
 		{0, []string{"ace", "env", "-e=testdata/.envi1.ace", "-i=testdata/identity1", "--", "sh", "-c", "echo $X"}, nil},
 		{0, []string{"ace", "env", "-e=testdata/.envi1.ace", "--on-missing=warn", "--", "sh", "-c", "echo $A"}, nil},
 
+		{0, []string{"rm", "-f", "testdata/.envi5.ace"}, nil},
+		{0, []string{"ace", "set", "-e=testdata/.envi5.ace", "-R=testdata/recipients1.txt"}, strings.NewReader("KEY1=value1\nCERT=\"-----BEGIN CERTIFICATE-----\nMIIBkTCB+w==\n-----END CERTIFICATE-----\"\nKEY2=value2")},
+		{0, []string{"ace", "get", "-e=testdata/.envi5.ace", "-i=testdata/identity1"}, nil},
+
 		{0, []string{"rm", "-f", "testdata/.envi3.ace"}, nil},
 		{0, []string{"ace", "set", "-e=testdata/.envi3.ace", "-R=testdata/recipients1.txt", "A=1", "B=2", "C=1 2 3 "}, nil},
 		{0, []string{"ace", "get", "-e=testdata/.envi3.ace", "-i=testdata/identity1", "A"}, nil},
