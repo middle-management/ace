@@ -94,6 +94,7 @@ func (cmd *Set) Run() error {
 		data, _ := io.ReadAll(input)
 		var cur strings.Builder
 		var inQuote byte
+		var escaped bool
 		for _, c := range data {
 			if inQuote == 0 && c == '\n' {
 				line := cur.String()
@@ -105,7 +106,11 @@ func (cmd *Set) Run() error {
 				pairs = append(pairs, line)
 			} else {
 				cur.WriteByte(c)
-				if inQuote == 0 && (c == '"' || c == '\'') {
+				if escaped {
+					escaped = false
+				} else if c == '\\' && inQuote == '"' {
+					escaped = true
+				} else if inQuote == 0 && (c == '"' || c == '\'') {
 					inQuote = c
 				} else if c == inQuote {
 					inQuote = 0
