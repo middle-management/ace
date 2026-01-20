@@ -1,0 +1,5 @@
+KEY1=value1
+CERT="-----BEGIN CERTIFICATE-----
+MIIBkTCB+w==
+-----END CERTIFICATE-----"
+KEY2=value2
