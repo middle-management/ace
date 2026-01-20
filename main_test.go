@@ -333,37 +333,64 @@ func TestAce(t *testing.T) {
 }
 
 func TestMultilineStdin(t *testing.T) {
-	os.Remove("testdata/.env_multiline.ace")
-
-	// Test multi-line quoted value via stdin (e.g., PEM certificates)
-	input = strings.NewReader("KEY1=value1\nCERT=\"-----BEGIN CERTIFICATE-----\nMIIBkTCB+w==\n-----END CERTIFICATE-----\"\nKEY2=value2")
-	cmd := &Set{EnvFile: "testdata/.env_multiline.ace", RecipientFiles: []string{"testdata/recipients1.txt"}}
-	err := cmd.Run()
-	if err != nil {
-		t.Fatal(err)
+	tests := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{
+			name:     "double quoted multiline",
+			input:    "KEY1=value1\nCERT=\"-----BEGIN CERTIFICATE-----\nMIIBkTCB+w==\n-----END CERTIFICATE-----\"\nKEY2=value2",
+			expected: []string{"KEY1=value1", "-----BEGIN CERTIFICATE-----", "-----END CERTIFICATE-----", "KEY2=value2"},
+		},
+		{
+			name:     "single quoted multiline",
+			input:    "KEY='line1\nline2'\n",
+			expected: []string{"KEY='line1\nline2'"},
+		},
+		{
+			name:     "escaped quote in double quotes",
+			input:    "KEY=\"value with \\\" escaped\"\n",
+			expected: []string{"KEY=\"value with \\\" escaped\""},
+		},
+		{
+			name:     "single quote inside double quotes",
+			input:    "KEY=\"it's fine\"\n",
+			expected: []string{"KEY=\"it's fine\""},
+		},
+		{
+			name:     "empty line in multiline value",
+			input:    "KEY=\"line1\n\nline3\"\n",
+			expected: []string{"KEY=\"line1\n\nline3\""},
+		},
 	}
 
-	buf := &bytes.Buffer{}
-	output = buf
-	getCmd := &Get{EnvFile: "testdata/.env_multiline.ace", Identities: []string{"testdata/identity1"}}
-	err = getCmd.Run()
-	if err != nil {
-		t.Fatal(err)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			os.Remove("testdata/.env_multiline.ace")
 
-	got := buf.String()
-	// Verify that CERT contains the full multi-line PEM
-	if !strings.Contains(got, "-----BEGIN CERTIFICATE-----") {
-		t.Errorf("expected CERT to contain BEGIN marker, got: %s", got)
-	}
-	if !strings.Contains(got, "-----END CERTIFICATE-----") {
-		t.Errorf("expected CERT to contain END marker, got: %s", got)
-	}
-	if !strings.Contains(got, "KEY1=value1") {
-		t.Errorf("expected KEY1=value1, got: %s", got)
-	}
-	if !strings.Contains(got, "KEY2=value2") {
-		t.Errorf("expected KEY2=value2, got: %s", got)
+			input = strings.NewReader(tt.input)
+			cmd := &Set{EnvFile: "testdata/.env_multiline.ace", RecipientFiles: []string{"testdata/recipients1.txt"}}
+			err := cmd.Run()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			buf := &bytes.Buffer{}
+			output = buf
+			getCmd := &Get{EnvFile: "testdata/.env_multiline.ace", Identities: []string{"testdata/identity1"}}
+			err = getCmd.Run()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			got := buf.String()
+			for _, exp := range tt.expected {
+				if !strings.Contains(got, exp) {
+					t.Errorf("expected %q in output, got: %s", exp, got)
+				}
+			}
+		})
 	}
 }
 
