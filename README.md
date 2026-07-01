@@ -96,7 +96,15 @@ ACE was meant for a workflow where a project can store all secrets in the git re
 - `ace set [KEY=VALUE...]`: Sets environment variables. Accepts multiple key-value pairs.
 - `ace set < .env`: Sets variables from a file formatted as KEY=VALUE per line.
 - `ace get [KEY...]`: Retrieves the values of specified environment variables.
-- `ace env COMMAND WITH ARGS...`: Executes a command with the environment variables loaded. Use `ace env` as a docker entrypoint to have it load secrets into environment of the command.
+- `ace env -- COMMAND WITH ARGS...`: Executes a command with the environment variables loaded. Use `ace env` as a docker entrypoint to have it load secrets into environment of the command.
+
+### Common Flags
+
+- `-e, --env-file FILE`: Path to the encrypted env file. Defaults to `./.env.ace`.
+- `-i, --identity IDENTITY`: Decrypt using the specified identity file. Can be repeated. Defaults to `$XDG_CONFIG_HOME/ace/identity`. (`get` and `env`)
+- `-r, --recipient RECIPIENT`: Encrypt to the specified recipient. Can be repeated. (`set`)
+- `-R, --recipient-file FILE`: Encrypt to the recipients listed in FILE. Can be repeated. Defaults to `./recipients.txt`. (`set`)
+- `--on-missing MODE`: How to handle a missing env-file or identity: `error` (default), `warn` or `ignore`. (`env`)
 
 ## Security Considerations
 

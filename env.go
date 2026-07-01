@@ -46,19 +46,22 @@ func (cmd *Env) Run() error {
 		return err
 	}
 
-	vars, err := readEnvFile(src, identities, false)
-	if err != nil {
-		if err.Error() == "no identities specified" {
+	var vars []string
+	if src != nil {
+		if len(identities) == 0 {
 			switch cmd.OnMissing {
 			case "ignore":
 				// silence
 			case "warn", "warning":
-				slog.Warn(err.Error())
+				slog.Warn("no identities specified")
 			default:
-				return err
+				return errors.New("no identities specified")
 			}
 		} else {
-			return err
+			vars, err = readEnvFile(src, identities, false)
+			if err != nil {
+				return err
+			}
 		}
 	}
 

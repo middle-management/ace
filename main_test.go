@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"strconv"
@@ -279,6 +281,53 @@ func TestAce(t *testing.T) {
 			test.Snapshot(t, buf.Bytes())
 		})
 	})
+	t.Run("set with invalid pair writes nothing", func(t *testing.T) {
+		os.Remove("testdata/.env_invalid_pair.ace")
+		cmd := &Set{EnvFile: "testdata/.env_invalid_pair.ace", RecipientFiles: []string{"testdata/recipients1.txt"}, EnvPairs: []string{"A=1", `BAD="unclosed`}}
+		err := cmd.Run()
+		if err == nil {
+			t.Fatal("expected an error due to unclosed quote, but none occurred")
+		}
+		if _, err := os.Stat("testdata/.env_invalid_pair.ace"); !errors.Is(err, fs.ErrNotExist) {
+			t.Fatal("expected no file to be written when a pair is invalid")
+		}
+	})
+
+	t.Run("set with no pairs writes nothing", func(t *testing.T) {
+		os.Remove("testdata/.env_no_pairs.ace")
+		input = strings.NewReader("# only a comment\nno equals sign\n")
+		cmd := &Set{EnvFile: "testdata/.env_no_pairs.ace", RecipientFiles: []string{"testdata/recipients1.txt"}}
+		err := cmd.Run()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat("testdata/.env_no_pairs.ace"); !errors.Is(err, fs.ErrNotExist) {
+			t.Fatal("expected no file to be written when there are no pairs")
+		}
+	})
+
+	t.Run("large value roundtrip", func(t *testing.T) {
+		os.Remove("testdata/.env_large.ace")
+		large := strings.Repeat("0123456789", 10_000)
+		{
+			cmd := &Set{EnvFile: "testdata/.env_large.ace", RecipientFiles: []string{"testdata/recipients1.txt"}, EnvPairs: []string{"LARGE=" + large}}
+			err := cmd.Run()
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		buf := &bytes.Buffer{}
+		output = buf
+		cmd := &Get{EnvFile: "testdata/.env_large.ace", Identities: []string{"testdata/identity1"}}
+		err := cmd.Run()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := buf.String(), "LARGE="+large+"\n"; got != want {
+			t.Fatalf("large value did not roundtrip, got %d bytes want %d bytes", len(got), len(want))
+		}
+	})
+
 	t.Run("quoted and escaped values", func(t *testing.T) {
 		os.Remove("testdata/.env_quotes.ace")
 		{
