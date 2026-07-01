@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode"
@@ -33,12 +34,17 @@ func readEnvFile(src io.Reader, identities []age.Identity, keepQuotes bool) ([]s
 	vals := map[string]string{}
 
 	s := bufio.NewScanner(src)
+	// large values (certificates, keystores) can exceed the default 64KB line limit
+	s.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
 	var aead cipher.AEAD
+	var totalBlocks, matchedBlocks int
 	for s.Scan() {
 		line := strings.TrimSpace(s.Text())
 
 		// split on ACE_PREFIX
 		if strings.HasPrefix(line, ACE_PREFIX) {
+			totalBlocks++
+
 			// base32decode and armor decode age header
 			header, err := base32.StdEncoding.DecodeString(strings.TrimPrefix(line, ACE_PREFIX))
 			if err != nil {
@@ -66,6 +72,7 @@ func readEnvFile(src io.Reader, identities []age.Identity, keepQuotes bool) ([]s
 			if err != nil {
 				return nil, err
 			}
+			matchedBlocks++
 		}
 
 		if strings.HasPrefix(line, "#") {
@@ -103,6 +110,12 @@ func readEnvFile(src io.Reader, identities []age.Identity, keepQuotes bool) ([]s
 		}
 		vals[pair[0]] = string(plaintext)
 	}
+	if err := s.Err(); err != nil {
+		return nil, err
+	}
+	if totalBlocks > 0 && matchedBlocks == 0 {
+		slog.Warn("no identity matched any encrypted block", "blocks", totalBlocks)
+	}
 
 	var newVars []string
 	for _, k := range keys {
@@ -121,22 +134,34 @@ func readEnvFile(src io.Reader, identities []age.Identity, keepQuotes bool) ([]s
 }
 
 func readIdentities(idents []string, onMissing string) ([]age.Identity, error) {
-	if _, exists := os.LookupEnv("XDG_CONFIG_HOME"); !exists {
-		dir, err := os.UserConfigDir()
-		if err != nil {
-			return nil, fmt.Errorf("unable to read user config dir: %w", err)
-		}
-		os.Setenv("XDG_CONFIG_HOME", dir)
-	}
+	// resolves to $XDG_CONFIG_HOME when set, otherwise the platform default
+	configDir, configDirErr := os.UserConfigDir()
 
 	if len(idents) == 0 {
-		idents = []string{"$XDG_CONFIG_HOME/ace/identity"}
+		if configDirErr != nil {
+			return nil, fmt.Errorf("unable to read user config dir: %w", configDirErr)
+		}
+		idents = []string{filepath.Join(configDir, "ace", "identity")}
+	}
+
+	// expand like os.ExpandEnv, but resolve $XDG_CONFIG_HOME even when unset
+	// without mutating the process environment (it would leak into `ace env` children)
+	expand := func(path string) string {
+		return os.Expand(path, func(key string) string {
+			if v, ok := os.LookupEnv(key); ok {
+				return v
+			}
+			if key == "XDG_CONFIG_HOME" && configDirErr == nil {
+				return configDir
+			}
+			return ""
+		})
 	}
 
 	var identities []age.Identity
 	for _, id := range idents {
 		err := func() error {
-			i, err := os.Open(os.ExpandEnv(id))
+			i, err := os.Open(expand(id))
 			if err != nil {
 				if errors.Is(err, os.ErrNotExist) {
 					switch onMissing {
