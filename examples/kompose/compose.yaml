@@ -1,6 +1,6 @@
 services:
   env:
-    image: docker.io/slaskis/ace-example:latest
+    image: docker.io/middle-management/ace-example:latest
     build: .
     restart: no
     secrets:

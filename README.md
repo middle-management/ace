@@ -17,7 +17,7 @@ ACE (Append-only encrypted Environment variables) is a tool designed to securely
 
 Install by downloading a release for your platform and placing it somewhere on your `$PATH`.
 
-Or if you have a Go environment setup you may also install it using `go install github.com/slaskis/ace@latest`.
+Or if you have a Go environment setup you may also install it using `go install github.com/middle-management/ace@latest`.
 
 ### Basic Usage
 

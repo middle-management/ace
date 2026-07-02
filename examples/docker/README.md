@@ -8,9 +8,9 @@ It also shows that it works with a scratch image, which may be useful in statica
 
 ```sh
 GOOS=linux go build -o env .
-docker build -t slaskis/ace-example:scratch .
+docker build -t middle-management/ace-example:scratch .
 docker run \
 	--mount type=bind,source="$(pwd)"/.env.ace,target=/run/secrets/env,readonly \
 	--mount type=bind,source="$(pwd)"/identity,target=/run/secrets/identity,readonly \
-	slaskis/ace-example:scratch
+	middle-management/ace-example:scratch
 ```
