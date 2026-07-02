@@ -1,14 +1,17 @@
-name: Go
+name: Release
 
+# Immutable releases cannot receive assets after publishing, so instead of
+# reacting to a published release this builds on tag push, attaches the
+# assets to a draft release (drafts stay mutable) and then publishes it.
 on:
-  release:
-    types: [published]
+  push:
+    tags: ["v*"]
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # needed for uploading release assets
+      contents: read
       id-token: write # needed for keyless signing with cosign
     strategy:
       matrix:
@@ -28,7 +31,7 @@ jobs:
         run: go test -v ./...
 
       - name: Build
-        run: go build -ldflags '-s -w -X main.version=${{ github.event.release.tag_name }}' -o ace-${{ matrix.goos }}-${{ matrix.arch }} -v .
+        run: go build -ldflags '-s -w -X main.version=${{ github.ref_name }}' -o ace-${{ matrix.goos }}-${{ matrix.arch }} -v .
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.arch }}
@@ -40,41 +43,37 @@ jobs:
             --output-signature ace-${{ matrix.goos }}-${{ matrix.arch }}.sig \
             --output-certificate ace-${{ matrix.goos }}-${{ matrix.arch }}.pem
 
-      - name: Upload Binary
-        uses: actions/github-script@v7
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
         with:
-          script: |
-            const fs = require('fs');
-            github.rest.repos.uploadReleaseAsset({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              release_id: context.payload.release.id,
-              name: "ace-${{ matrix.goos }}-${{ matrix.arch }}",
-              data: fs.readFileSync("ace-${{ matrix.goos }}-${{ matrix.arch }}")
-            })
+          name: ace-${{ matrix.goos }}-${{ matrix.arch }}
+          path: |
+            ace-${{ matrix.goos }}-${{ matrix.arch }}
+            ace-${{ matrix.goos }}-${{ matrix.arch }}.sig
+            ace-${{ matrix.goos }}-${{ matrix.arch }}.pem
+          if-no-files-found: error
 
-      - name: Upload Signature
-        uses: actions/github-script@v7
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # needed for creating the release
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
         with:
-          script: |
-            const fs = require('fs');
-            github.rest.repos.uploadReleaseAsset({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              release_id: context.payload.release.id,
-              name: "ace-${{ matrix.goos }}-${{ matrix.arch }}.sig",
-              data: fs.readFileSync("ace-${{ matrix.goos }}-${{ matrix.arch }}.sig")
-            })
+          path: dist
+          merge-multiple: true
 
-      - name: Upload Certificate
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            github.rest.repos.uploadReleaseAsset({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              release_id: context.payload.release.id,
-              name: "ace-${{ matrix.goos }}-${{ matrix.arch }}.pem",
-              data: fs.readFileSync("ace-${{ matrix.goos }}-${{ matrix.arch }}.pem")
-            })
+      - name: Create Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft \
+            --generate-notes \
+            dist/*
+          gh release edit "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft=false
