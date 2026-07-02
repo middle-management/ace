@@ -328,6 +328,186 @@ func TestAce(t *testing.T) {
 		}
 	})
 
+	t.Run("reads v1 format files", func(t *testing.T) {
+		// testdata/env_v1 is a committed fixture written by an older
+		// (v1-only) build: two blocks for recipient1, one for recipient2
+		t.Run("identity1", func(t *testing.T) {
+			buf := &bytes.Buffer{}
+			output = buf
+			cmd := &Get{EnvFile: "testdata/env_v1", Identities: []string{"testdata/identity1"}}
+			err := cmd.Run()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, want := buf.String(), "A=1\nB=2\nC=\"hello world\"\n"; got != want {
+				t.Fatalf("got %q, want %q", got, want)
+			}
+		})
+		t.Run("identity2", func(t *testing.T) {
+			buf := &bytes.Buffer{}
+			output = buf
+			cmd := &Get{EnvFile: "testdata/env_v1", Identities: []string{"testdata/identity2"}}
+			err := cmd.Run()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, want := buf.String(), "D=only-for-identity2\n"; got != want {
+				t.Fatalf("got %q, want %q", got, want)
+			}
+		})
+	})
+
+	t.Run("v2 rejects ciphertexts swapped between names", func(t *testing.T) {
+		os.Remove("testdata/.env_swap.ace")
+		{
+			cmd := &Set{EnvFile: "testdata/.env_swap.ace", RecipientFiles: []string{"testdata/recipients1.txt"}, EnvPairs: []string{"A=1", "B=2"}}
+			err := cmd.Run()
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		data, err := os.ReadFile("testdata/.env_swap.ace")
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(string(data), "\n")
+		idxA, idxB := -1, -1
+		for i, l := range lines {
+			if strings.HasPrefix(l, "A=") {
+				idxA = i
+			}
+			if strings.HasPrefix(l, "B=") {
+				idxB = i
+			}
+		}
+		if idxA < 0 || idxB < 0 {
+			t.Fatal("expected A and B lines in the env file")
+		}
+		valA := strings.TrimPrefix(lines[idxA], "A=")
+		valB := strings.TrimPrefix(lines[idxB], "B=")
+		lines[idxA] = "A=" + valB
+		lines[idxB] = "B=" + valA
+		if err := os.WriteFile("testdata/.env_swap.ace", []byte(strings.Join(lines, "\n")), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		buf := &bytes.Buffer{}
+		output = buf
+		cmd := &Get{EnvFile: "testdata/.env_swap.ace", Identities: []string{"testdata/identity1"}}
+		err = cmd.Run()
+		if err == nil {
+			t.Fatalf("expected decryption to fail for swapped ciphertexts, got: %q", buf.String())
+		}
+	})
+
+	t.Run("rotate", func(t *testing.T) {
+		os.Remove("testdata/.env_rotate.ace")
+		{
+			cmd := &Set{EnvFile: "testdata/.env_rotate.ace", RecipientFiles: []string{"testdata/recipients1.txt"}, EnvPairs: []string{"A=1", "B=2"}}
+			err := cmd.Run()
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		{
+			cmd := &Set{EnvFile: "testdata/.env_rotate.ace", RecipientFiles: []string{"testdata/recipients12.txt"}, EnvPairs: []string{"A=3", "C=\"multi\nline\""}}
+			err := cmd.Run()
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		{
+			cmd := &Rotate{EnvFile: "testdata/.env_rotate.ace", RecipientFiles: []string{"testdata/recipients2.txt"}, Identities: []string{"testdata/identity1"}}
+			err := cmd.Run()
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		data, err := os.ReadFile("testdata/.env_rotate.ace")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := strings.Count(string(data), ACE_PREFIX_V2), 1; got != want {
+			t.Fatalf("expected a single block after rotate, got %d", got)
+		}
+
+		t.Run("new recipient reads all vars", func(t *testing.T) {
+			buf := &bytes.Buffer{}
+			output = buf
+			cmd := &Get{EnvFile: "testdata/.env_rotate.ace", Identities: []string{"testdata/identity2"}}
+			err := cmd.Run()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, want := buf.String(), "A=3\nB=2\nC=\"multi\nline\"\n"; got != want {
+				t.Fatalf("got %q, want %q", got, want)
+			}
+		})
+
+		t.Run("old recipient no longer matches", func(t *testing.T) {
+			buf := &bytes.Buffer{}
+			output = buf
+			cmd := &Get{EnvFile: "testdata/.env_rotate.ace", Identities: []string{"testdata/identity1"}}
+			err := cmd.Run()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if buf.String() != "" {
+				t.Fatalf("expected no output, got %q", buf.String())
+			}
+		})
+	})
+
+	t.Run("rotate refuses when a block cannot be decrypted", func(t *testing.T) {
+		os.Remove("testdata/.env_rotate_refuse.ace")
+		{
+			cmd := &Set{EnvFile: "testdata/.env_rotate_refuse.ace", RecipientFiles: []string{"testdata/recipients1.txt"}, EnvPairs: []string{"A=1"}}
+			err := cmd.Run()
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		{
+			cmd := &Set{EnvFile: "testdata/.env_rotate_refuse.ace", RecipientFiles: []string{"testdata/recipients2.txt"}, EnvPairs: []string{"B=2"}}
+			err := cmd.Run()
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		before, err := os.ReadFile("testdata/.env_rotate_refuse.ace")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		cmd := &Rotate{EnvFile: "testdata/.env_rotate_refuse.ace", RecipientFiles: []string{"testdata/recipients1.txt"}, Identities: []string{"testdata/identity1"}}
+		err = cmd.Run()
+		if err == nil {
+			t.Fatal("expected an error, identity1 cannot decrypt the recipients2 block")
+		}
+
+		after, err := os.ReadFile("testdata/.env_rotate_refuse.ace")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(before, after) {
+			t.Fatal("expected env file to be unchanged after a refused rotate")
+		}
+	})
+
+	t.Run("unsupported block version", func(t *testing.T) {
+		os.Remove("testdata/.env_future.ace")
+		if err := os.WriteFile("testdata/.env_future.ace", []byte("# ace/v9:XXXX\nA=YYYY\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		cmd := &Get{EnvFile: "testdata/.env_future.ace", Identities: []string{"testdata/identity1"}}
+		err := cmd.Run()
+		if err == nil || !strings.Contains(err.Error(), "unsupported block version") {
+			t.Fatalf("expected unsupported block version error, got %v", err)
+		}
+	})
+
 	t.Run("quoted and escaped values", func(t *testing.T) {
 		os.Remove("testdata/.env_quotes.ace")
 		{
@@ -484,6 +664,16 @@ func TestIntegration(t *testing.T) {
 		{0, []string{"ace", "get", "-e=testdata/.envi4.ace", "-i=testdata/identity2"}, nil},
 		{0, []string{"ace", "get", "-e=testdata/.envi4.ace", "-i=testdata/identity1", "-i=testdata/identity2"}, nil},
 		{0, []string{"ace", "get", "-e=testdata/.envi4.ace", "-i=testdata/identity2", "-i=testdata/identity1"}, nil},
+
+		{0, []string{"ace", "get", "-e=testdata/env_v1", "-i=testdata/identity1"}, nil},
+		{0, []string{"ace", "get", "-e=testdata/env_v1", "-i=testdata/identity2"}, nil},
+
+		{0, []string{"rm", "-f", "testdata/.envi6.ace"}, nil},
+		{0, []string{"ace", "set", "-e=testdata/.envi6.ace", "-R=testdata/recipients1.txt", "A=1", "B=2"}, nil},
+		{0, []string{"ace", "set", "-e=testdata/.envi6.ace", "-R=testdata/recipients2.txt", "C=3"}, nil},
+		{1, []string{"ace", "rotate", "-e=testdata/.envi6.ace", "-R=testdata/recipients1.txt", "-i=testdata/identity1"}, nil},
+		{0, []string{"ace", "rotate", "-e=testdata/.envi6.ace", "-R=testdata/recipients2.txt", "-i=testdata/identity1", "-i=testdata/identity2"}, nil},
+		{0, []string{"ace", "get", "-e=testdata/.envi6.ace", "-i=testdata/identity2"}, nil},
 
 		{0, []string{"rm", "-f", "testdata/.env_quotes.ace"}, nil},
 		{0, []string{"ace", "set", "-e=testdata/.env_quotes.ace", "-R=testdata/recipients1.txt",

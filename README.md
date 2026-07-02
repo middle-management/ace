@@ -82,10 +82,18 @@ To begin using ACE, follow these simple steps:
   ace get
   ```
 
-- **Rotate all available keys to the most recent recipients**
+- **Rotate all variables to a new set of recipients**
+
   ```bash
-  ace get | ace set
+  ace rotate -R recipients.txt
   ```
+
+  Unlike `set`, `rotate` replaces the whole file with a single freshly
+  encrypted block. Use it when recipients change (removed recipients lose
+  access to the rewritten file), to compact a file that has grown from many
+  appends, or to upgrade old files to the latest block format. It refuses to
+  run if any block cannot be decrypted with the available identities, since
+  those variables would otherwise be lost.
 
 ### Using ACE in CI/CD
 
@@ -100,15 +108,27 @@ ACE was meant for a workflow where a project can store all secrets in the git re
 - `ace set [KEY=VALUE...]`: Sets environment variables. Accepts multiple key-value pairs.
 - `ace set < .env`: Sets variables from a file formatted as KEY=VALUE per line.
 - `ace get [KEY...]`: Retrieves the values of specified environment variables.
+- `ace rotate`: Re-encrypts all variables into a single block for the given recipients, replacing the file.
 - `ace env -- COMMAND WITH ARGS...`: Executes a command with the environment variables loaded. Use `ace env` as a docker entrypoint to have it load secrets into environment of the command.
 
 ### Common Flags
 
 - `-e, --env-file FILE`: Path to the encrypted env file. Defaults to `./.env.ace`.
-- `-i, --identity IDENTITY`: Decrypt using the specified identity file. Can be repeated. Defaults to `$XDG_CONFIG_HOME/ace/identity`. (`get` and `env`)
-- `-r, --recipient RECIPIENT`: Encrypt to the specified recipient. Can be repeated. (`set`)
-- `-R, --recipient-file FILE`: Encrypt to the recipients listed in FILE. Can be repeated. Defaults to `./recipients.txt`. (`set`)
+- `-i, --identity IDENTITY`: Decrypt using the specified identity file. Can be repeated. Defaults to `$XDG_CONFIG_HOME/ace/identity`. (`get`, `env` and `rotate`)
+- `-r, --recipient RECIPIENT`: Encrypt to the specified recipient. Can be repeated. (`set` and `rotate`)
+- `-R, --recipient-file FILE`: Encrypt to the recipients listed in FILE. Can be repeated. Defaults to `./recipients.txt`. (`set` and `rotate`)
 - `--on-missing MODE`: How to handle a missing env-file or identity: `error` (default), `warn` or `ignore`. (`env`)
+
+## File Format
+
+Each `ace set` appends a block: a `# ace/v2:` header containing a fresh
+symmetric block key encrypted to the recipients with age, followed by one
+`KEY=ciphertext` line per variable, sealed with XChaCha20-Poly1305. Since v2
+the variable name is bound into each value's authenticated data, so a
+ciphertext cannot be moved or copied to another variable name without
+failing decryption. Files with older `# ace/v1:` blocks (which lack this
+binding) remain readable, and `ace rotate` rewrites them as v2. Note that
+ace versions that only know v1 cannot read v2 blocks.
 
 ## Security Considerations
 

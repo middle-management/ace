@@ -58,7 +58,7 @@ func (cmd *Env) Run() error {
 				return errors.New("no identities specified")
 			}
 		} else {
-			vars, err = readEnvFile(src, identities, false)
+			vars, _, err = readEnvFile(src, identities, false)
 			if err != nil {
 				return err
 			}
