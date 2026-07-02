@@ -3,9 +3,18 @@ name: Release
 # Immutable releases cannot receive assets after publishing, so instead of
 # reacting to a published release this builds on tag push, attaches the
 # assets to a draft release (drafts stay mutable) and then publishes it.
+#
+# A release can also be cut from the Actions tab with "Run workflow" by
+# entering a new tag name: the tag is then created by publishing the release.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to create and release, e.g. v0.7.2"
+        required: true
+        type: string
 
 jobs:
   build:
@@ -13,14 +22,16 @@ jobs:
     permissions:
       contents: read
       id-token: write # needed for keyless signing with cosign
+    env:
+      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
     strategy:
       matrix:
         goos: [linux, windows, darwin]
         arch: [amd64, arm64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
@@ -31,7 +42,7 @@ jobs:
         run: go test -v ./...
 
       - name: Build
-        run: go build -ldflags '-s -w -X main.version=${{ github.ref_name }}' -o ace-${{ matrix.goos }}-${{ matrix.arch }} -v .
+        run: go build -ldflags "-s -w -X main.version=$TAG" -o ace-${{ matrix.goos }}-${{ matrix.arch }} -v .
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.arch }}
@@ -44,7 +55,7 @@ jobs:
             --output-certificate ace-${{ matrix.goos }}-${{ matrix.arch }}.pem
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ace-${{ matrix.goos }}-${{ matrix.arch }}
           path: |
@@ -58,22 +69,33 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # needed for creating the release
+    env:
+      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
     steps:
       - name: Download Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           path: dist
           merge-multiple: true
 
+      # --target sets where the tag is created when it does not exist yet
+      # (workflow_dispatch); it is ignored when the tag already exists (tag
+      # push). Publishing with the workflow token does not trigger another
+      # run of this workflow.
       - name: Create Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
+          if [[ "$TAG" != v* ]]; then
+            echo "::error::tag must start with 'v', got '$TAG'"
+            exit 1
+          fi
+          gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --draft \
             --generate-notes \
+            --target "$GITHUB_SHA" \
             dist/*
-          gh release edit "$GITHUB_REF_NAME" \
+          gh release edit "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --draft=false
