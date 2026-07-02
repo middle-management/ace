@@ -36,7 +36,7 @@ for full usage. Rules:
   `ace set`. Treat merge conflicts in it by keeping both sides' blocks.
 - To give a new person or machine access: append their age public key to
   `recipients.txt`, then re-encrypt existing values to the new recipient
-  list with `ace get | ace set` (run by someone who can already decrypt).
+  list with `ace rotate` (run by someone who can already decrypt).
 ```
 
 ## Claude Code skill
@@ -96,7 +96,7 @@ full reference.
 2. They add its public key to the recipients:
    `age-keygen -y "$XDG_CONFIG_HOME/ace/identity" >> recipients.txt`
 3. Someone who can already decrypt re-encrypts existing values to the new
-   recipient list: `ace get | ace set`
+   recipient list: `ace rotate`
 4. Commit `.env.ace` and `recipients.txt`.
 
 ## Troubleshooting

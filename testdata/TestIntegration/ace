@@ -16,6 +16,7 @@ Commands:
   env                    Run a command with the decrypted env vars added to its environment
   get                    Decrypt and print env vars
   set                    Encrypt env vars and append them to the env file
+  rotate                 Re-encrypt all env vars into a single block for the given recipients, replacing the env file
   version                Print version
 
 Getting started:
@@ -30,7 +31,8 @@ Examples:
   ace get                   decrypt and print all variables readable by your identity
   ace get API_KEY           decrypt and print selected variables
   ace env -- npm start      run a command with the decrypted variables in its environment
-  ace get | ace set         re-encrypt all readable variables to the current recipients
+  ace rotate                re-encrypt all variables into a single fresh block for the
+                            current recipients, replacing the env file
 
 Note that set encrypts to recipients (public keys) while get and env decrypt
 with identities (private keys): to read back a value you set, the public key

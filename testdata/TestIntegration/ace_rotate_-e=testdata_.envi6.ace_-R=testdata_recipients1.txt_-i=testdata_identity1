@@ -1,0 +1,1 @@
+ERROR: refusing to rotate: 1 of 2 blocks could not be decrypted with the available identities, their vars would be lost

@@ -24,6 +24,7 @@ type Main struct {
 	Env     *Env     `arg:"subcommand:env" help:"Run a command with the decrypted env vars added to its environment"`
 	Get     *Get     `arg:"subcommand:get" help:"Decrypt and print env vars"`
 	Set     *Set     `arg:"subcommand:set" help:"Encrypt env vars and append them to the env file"`
+	Rotate  *Rotate  `arg:"subcommand:rotate" help:"Re-encrypt all env vars into a single block for the given recipients, replacing the env file"`
 	Version *Version `arg:"subcommand:version" help:"Print version"`
 }
 
@@ -52,7 +53,8 @@ Examples:
   ace get                   decrypt and print all variables readable by your identity
   ace get API_KEY           decrypt and print selected variables
   ace env -- npm start      run a command with the decrypted variables in its environment
-  ace get | ace set         re-encrypt all readable variables to the current recipients
+  ace rotate                re-encrypt all variables into a single fresh block for the
+                            current recipients, replacing the env file
 
 Note that set encrypts to recipients (public keys) while get and env decrypt
 with identities (private keys): to read back a value you set, the public key
@@ -61,28 +63,52 @@ of one of your identities must be listed among the recipients.
 Documentation: https://github.com/middle-management/ace`
 }
 
-const ACE_PREFIX = "# ace/v1:"
+const (
+	// v1 blocks encrypt each value on its own, so ciphertexts can be
+	// swapped between variable names without failing authentication
+	ACE_PREFIX_V1 = "# ace/v1:"
+	// v2 blocks bind the variable name into the value's AEAD as
+	// additional data, so a ciphertext only decrypts under its own name
+	ACE_PREFIX_V2 = "# ace/v2:"
+)
 
-func readEnvFile(src io.Reader, identities []age.Identity, keepQuotes bool) ([]string, error) {
+type envFileStats struct {
+	blocks  int
+	matched int
+}
+
+func readEnvFile(src io.Reader, identities []age.Identity, keepQuotes bool) ([]string, envFileStats, error) {
 	var keys []string
 	vals := map[string]string{}
+	var stats envFileStats
 
 	s := bufio.NewScanner(src)
 	// large values (certificates, keystores) can exceed the default 64KB line limit
 	s.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
 	var aead cipher.AEAD
-	var totalBlocks, matchedBlocks int
+	var bindKey bool
 	for s.Scan() {
 		line := strings.TrimSpace(s.Text())
 
-		// split on ACE_PREFIX
-		if strings.HasPrefix(line, ACE_PREFIX) {
-			totalBlocks++
+		// split on block prefix
+		if strings.HasPrefix(line, "# ace/") {
+			var prefix string
+			switch {
+			case strings.HasPrefix(line, ACE_PREFIX_V1):
+				prefix = ACE_PREFIX_V1
+				bindKey = false
+			case strings.HasPrefix(line, ACE_PREFIX_V2):
+				prefix = ACE_PREFIX_V2
+				bindKey = true
+			default:
+				return nil, stats, fmt.Errorf("unsupported block version %q, upgrade ace to read this file", strings.SplitN(line, ":", 2)[0])
+			}
+			stats.blocks++
 
 			// base32decode and armor decode age header
-			header, err := base32.StdEncoding.DecodeString(strings.TrimPrefix(line, ACE_PREFIX))
+			header, err := base32.StdEncoding.DecodeString(strings.TrimPrefix(line, prefix))
 			if err != nil {
-				return nil, err
+				return nil, stats, err
 			}
 
 			var r io.Reader
@@ -96,17 +122,17 @@ func readEnvFile(src io.Reader, identities []age.Identity, keepQuotes bool) ([]s
 				aead = nil
 				continue
 			} else if err != nil {
-				return nil, err
+				return nil, stats, err
 			}
 			blockKey, err := io.ReadAll(r)
 			if err != nil {
-				return nil, err
+				return nil, stats, err
 			}
 			aead, err = chacha20poly1305.NewX(blockKey)
 			if err != nil {
-				return nil, err
+				return nil, stats, err
 			}
-			matchedBlocks++
+			stats.matched++
 		}
 
 		if strings.HasPrefix(line, "#") {
@@ -125,18 +151,23 @@ func readEnvFile(src io.Reader, identities []age.Identity, keepQuotes bool) ([]s
 
 		secret, err := base32.StdEncoding.DecodeString(pair[1])
 		if err != nil {
-			return nil, err
+			return nil, stats, err
 		}
 
 		if len(secret) < aead.NonceSize() {
-			return nil, fmt.Errorf("ciphertext too short")
+			return nil, stats, fmt.Errorf("ciphertext too short")
 		}
 		nonce, ciphertext := secret[:aead.NonceSize()], secret[aead.NonceSize():]
 
+		var aad []byte
+		if bindKey {
+			aad = []byte(pair[0])
+		}
+
 		// Decrypt the message and check it wasn't tampered with.
-		plaintext, err := aead.Open(nil, nonce, ciphertext, nil)
+		plaintext, err := aead.Open(nil, nonce, ciphertext, aad)
 		if err != nil {
-			return nil, err
+			return nil, stats, err
 		}
 
 		if _, exists := vals[pair[0]]; !exists {
@@ -145,10 +176,10 @@ func readEnvFile(src io.Reader, identities []age.Identity, keepQuotes bool) ([]s
 		vals[pair[0]] = string(plaintext)
 	}
 	if err := s.Err(); err != nil {
-		return nil, err
+		return nil, stats, err
 	}
-	if totalBlocks > 0 && matchedBlocks == 0 {
-		slog.Warn("no identity matched any encrypted block", "blocks", totalBlocks)
+	if stats.blocks > 0 && stats.matched == 0 {
+		slog.Warn("no identity matched any encrypted block", "blocks", stats.blocks)
 	}
 
 	var newVars []string
@@ -158,13 +189,13 @@ func readEnvFile(src io.Reader, identities []age.Identity, keepQuotes bool) ([]s
 		} else {
 			v, err := UnescapeValue(vals[k])
 			if err != nil {
-				return nil, err
+				return nil, stats, err
 			}
 			newVars = append(newVars, k+"="+v)
 		}
 	}
 
-	return newVars, nil
+	return newVars, stats, nil
 }
 
 func readIdentities(idents []string, onMissing string) ([]age.Identity, error) {
@@ -338,6 +369,8 @@ func main() {
 			return args.Get.Run()
 		case args.Set != nil:
 			return args.Set.Run()
+		case args.Rotate != nil:
+			return args.Rotate.Run()
 		case args.Version != nil:
 			args.Version.version = version
 			return args.Version.Run()
