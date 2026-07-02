@@ -21,10 +21,44 @@ import (
 )
 
 type Main struct {
-	Env     *Env     `arg:"subcommand:env" help:"Expand to env and pass to command"`
-	Get     *Get     `arg:"subcommand:get" help:"Decrypt env with available identities"`
-	Set     *Set     `arg:"subcommand:set" help:"Append encrypted env vars to file"`
-	Version *Version `arg:"subcommand:version"`
+	Env     *Env     `arg:"subcommand:env" help:"Run a command with the decrypted env vars added to its environment"`
+	Get     *Get     `arg:"subcommand:get" help:"Decrypt and print env vars"`
+	Set     *Set     `arg:"subcommand:set" help:"Encrypt env vars and append them to the env file"`
+	Version *Version `arg:"subcommand:version" help:"Print version"`
+}
+
+func (Main) Description() string {
+	return `ace manages append-only encrypted environment variables.
+
+Variables are encrypted with age (https://age-encryption.org) to a set of
+recipients (public keys) and appended to a plain-text env file (./.env.ace
+by default) that is safe to commit to version control. Anyone with the
+recipients can append new values, but only holders of a matching identity
+(private key) can decrypt them. Values are never modified in place: setting
+an existing key appends a new value, and the latest value wins when reading.
+`
+}
+
+func (Main) Epilogue() string {
+	return `Getting started:
+  age-keygen -o "$XDG_CONFIG_HOME/ace/identity"    create an identity (once per user/machine)
+  age-keygen -y "$XDG_CONFIG_HOME/ace/identity" >> recipients.txt
+                                                   register its public key as a recipient
+
+Examples:
+  ace set API_KEY=abc123    encrypt a variable and append it to ./.env.ace
+  ace set < .env            encrypt variables read from stdin in .env format
+                            (preferred for secrets: values stay out of shell history)
+  ace get                   decrypt and print all variables readable by your identity
+  ace get API_KEY           decrypt and print selected variables
+  ace env -- npm start      run a command with the decrypted variables in its environment
+  ace get | ace set         re-encrypt all readable variables to the current recipients
+
+Note that set encrypts to recipients (public keys) while get and env decrypt
+with identities (private keys): to read back a value you set, the public key
+of one of your identities must be listed among the recipients.
+
+Documentation: https://github.com/middle-management/ace`
 }
 
 const ACE_PREFIX = "# ace/v1:"

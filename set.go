@@ -15,8 +15,8 @@ import (
 type Set struct {
 	RecipientFiles []string `arg:"--recipient-file,-R,separate" help:"Encrypt to recipients listed at RECIPIENT-FILE. Can be repeated. Defaults to ./recipients.txt"`
 	Recipients     []string `arg:"--recipient,-r,separate" help:"Encrypt to the specified RECIPIENT. Can be repeated."`
-	EnvFile        string   `arg:"--env-file,-e" default:"./.env.ace"`
-	EnvPairs       []string `arg:"positional"`
+	EnvFile        string   `arg:"--env-file,-e" default:"./.env.ace" help:"Append the encrypted variables to this file"`
+	EnvPairs       []string `arg:"positional" placeholder:"KEY=VALUE" help:"Variables to encrypt. When none are given they are read from stdin in .env format, which keeps values out of shell history"`
 }
 
 func (cmd *Set) Run() error {
