@@ -7,9 +7,9 @@ import (
 )
 
 type Get struct {
-	EnvFile    string   `arg:"--env-file,-e" default:"./.env.ace"`
+	EnvFile    string   `arg:"--env-file,-e" default:"./.env.ace" help:"Read encrypted variables from this file"`
 	Identities []string `arg:"--identity,-i,separate" help:"Decrypt using the specified IDENTITY. Can be repeated. Defaults to $XDG_CONFIG_HOME/ace/identity"`
-	Keys       []string `arg:"positional"`
+	Keys       []string `arg:"positional" placeholder:"KEY" help:"Print only these variables. Prints all variables readable by the identities when omitted"`
 }
 
 func (cmd *Get) Run() error {

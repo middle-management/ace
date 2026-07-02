@@ -14,9 +14,9 @@ import (
 
 type Env struct {
 	OnMissing  string   `arg:"--on-missing" default:"error" help:"How to handle when env-file or identity is missing, can be 'ignore', 'warn' or 'error'"`
-	EnvFile    string   `arg:"--env-file,-e" default:"./.env.ace"`
+	EnvFile    string   `arg:"--env-file,-e" default:"./.env.ace" help:"Read encrypted variables from this file"`
 	Identities []string `arg:"--identity,-i,separate" help:"Decrypt using the specified IDENTITY. Can be repeated. Defaults to $XDG_CONFIG_HOME/ace/identity"`
-	Command    []string `arg:"positional,required"`
+	Command    []string `arg:"positional,required" placeholder:"COMMAND" help:"Command to run with the decrypted variables added to its environment. Use -- before it to separate its flags from ace's"`
 }
 
 func (cmd *Env) Run() error {
