@@ -91,6 +91,10 @@ To begin using ACE, follow these simple steps:
 
 ACE was meant for a workflow where a project can store all secrets in the git repository while only giving access to certain recipients, such as CI.
 
+### Using ACE with coding agents
+
+`ace --help` is written to be enough for an LLM coding agent to use the tool correctly on its own. To teach agents your team's conventions — and to have them reach for ACE proactively — see [docs/agents.md](docs/agents.md) for copy-paste `AGENTS.md`/`CLAUDE.md` snippets, a Claude Code skill, and permission suggestions.
+
 ## API Reference
 
 - `ace set [KEY=VALUE...]`: Sets environment variables. Accepts multiple key-value pairs.
