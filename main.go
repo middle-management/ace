@@ -21,11 +21,11 @@ import (
 )
 
 type Main struct {
-	Env     *Env     `arg:"subcommand:env" help:"Run a command with the decrypted env vars added to its environment"`
-	Get     *Get     `arg:"subcommand:get" help:"Decrypt and print env vars"`
-	Set     *Set     `arg:"subcommand:set" help:"Encrypt env vars and append them to the env file"`
-	Rotate  *Rotate  `arg:"subcommand:rotate" help:"Re-encrypt all env vars into a single block for the given recipients, replacing the env file"`
-	Version *Version `arg:"subcommand:version" help:"Print version"`
+	Env    *Env     `arg:"subcommand:env" help:"Run a command with the decrypted env vars added to its environment"`
+	Get    *Get     `arg:"subcommand:get" help:"Decrypt and print env vars"`
+	Set    *Set     `arg:"subcommand:set" help:"Encrypt env vars and append them to the env file"`
+	Rotate *Rotate  `arg:"subcommand:rotate" help:"Re-encrypt all env vars into a single block for the given recipients, replacing the env file"`
+	Ver    *Version `arg:"subcommand:version" help:"Print version"`
 }
 
 func (Main) Description() string {
@@ -38,6 +38,14 @@ recipients can append new values, but only holders of a matching identity
 (private key) can decrypt them. Values are never modified in place: setting
 an existing key appends a new value, and the latest value wins when reading.
 `
+}
+
+// Version makes go-arg support --version in addition to the subcommand
+func (Main) Version() string {
+	if version == "" {
+		return "ace " + getVersion()
+	}
+	return "ace " + version
 }
 
 func (Main) Epilogue() string {
@@ -87,7 +95,9 @@ func readEnvFile(src io.Reader, identities []age.Identity, keepQuotes bool) ([]s
 	s.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
 	var aead cipher.AEAD
 	var bindKey bool
+	var lineNo int
 	for s.Scan() {
+		lineNo++
 		line := strings.TrimSpace(s.Text())
 
 		// split on block prefix
@@ -101,14 +111,14 @@ func readEnvFile(src io.Reader, identities []age.Identity, keepQuotes bool) ([]s
 				prefix = ACE_PREFIX_V2
 				bindKey = true
 			default:
-				return nil, stats, fmt.Errorf("unsupported block version %q, upgrade ace to read this file", strings.SplitN(line, ":", 2)[0])
+				return nil, stats, fmt.Errorf("line %d: unsupported block version %q, upgrade ace to read this file", lineNo, strings.SplitN(line, ":", 2)[0])
 			}
 			stats.blocks++
 
 			// base32decode and armor decode age header
 			header, err := base32.StdEncoding.DecodeString(strings.TrimPrefix(line, prefix))
 			if err != nil {
-				return nil, stats, err
+				return nil, stats, fmt.Errorf("line %d: block header: %w", lineNo, err)
 			}
 
 			var r io.Reader
@@ -122,15 +132,15 @@ func readEnvFile(src io.Reader, identities []age.Identity, keepQuotes bool) ([]s
 				aead = nil
 				continue
 			} else if err != nil {
-				return nil, stats, err
+				return nil, stats, fmt.Errorf("line %d: block header: %w", lineNo, err)
 			}
 			blockKey, err := io.ReadAll(r)
 			if err != nil {
-				return nil, stats, err
+				return nil, stats, fmt.Errorf("line %d: block header: %w", lineNo, err)
 			}
 			aead, err = chacha20poly1305.NewX(blockKey)
 			if err != nil {
-				return nil, stats, err
+				return nil, stats, fmt.Errorf("line %d: block header: %w", lineNo, err)
 			}
 			stats.matched++
 		}
@@ -151,11 +161,11 @@ func readEnvFile(src io.Reader, identities []age.Identity, keepQuotes bool) ([]s
 
 		secret, err := base32.StdEncoding.DecodeString(pair[1])
 		if err != nil {
-			return nil, stats, err
+			return nil, stats, fmt.Errorf("line %d: %s: %w", lineNo, pair[0], err)
 		}
 
 		if len(secret) < aead.NonceSize() {
-			return nil, stats, fmt.Errorf("ciphertext too short")
+			return nil, stats, fmt.Errorf("line %d: %s: ciphertext too short", lineNo, pair[0])
 		}
 		nonce, ciphertext := secret[:aead.NonceSize()], secret[aead.NonceSize():]
 
@@ -167,7 +177,7 @@ func readEnvFile(src io.Reader, identities []age.Identity, keepQuotes bool) ([]s
 		// Decrypt the message and check it wasn't tampered with.
 		plaintext, err := aead.Open(nil, nonce, ciphertext, aad)
 		if err != nil {
-			return nil, stats, err
+			return nil, stats, fmt.Errorf("line %d: %s: %w", lineNo, pair[0], err)
 		}
 
 		if _, exists := vals[pair[0]]; !exists {
@@ -371,9 +381,9 @@ func main() {
 			return args.Set.Run()
 		case args.Rotate != nil:
 			return args.Rotate.Run()
-		case args.Version != nil:
-			args.Version.version = version
-			return args.Version.Run()
+		case args.Ver != nil:
+			args.Ver.version = version
+			return args.Ver.Run()
 		default:
 			p.WriteHelp(os.Stderr)
 			return nil

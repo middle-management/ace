@@ -7,10 +7,12 @@ recipients can append new values, but only holders of a matching identity
 (private key) can decrypt them. Values are never modified in place: setting
 an existing key appends a new value, and the latest value wins when reading.
 
+ace test
 Usage: ace <command> [<args>]
 
 Options:
   --help, -h             display this help and exit
+  --version              display version and exit
 
 Commands:
   env                    Run a command with the decrypted env vars added to its environment

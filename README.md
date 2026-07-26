@@ -107,7 +107,7 @@ ACE was meant for a workflow where a project can store all secrets in the git re
 
 - `ace set [KEY=VALUE...]`: Sets environment variables. Accepts multiple key-value pairs.
 - `ace set < .env`: Sets variables from a file formatted as KEY=VALUE per line.
-- `ace get [KEY...]`: Retrieves the values of specified environment variables.
+- `ace get [KEY...]`: Retrieves the values of specified environment variables. Exits non-zero when a requested variable has no value readable by the given identities.
 - `ace rotate`: Re-encrypts all variables into a single block for the given recipients, replacing the file.
 - `ace env -- COMMAND WITH ARGS...`: Executes a command with the environment variables loaded. Use `ace env` as a docker entrypoint to have it load secrets into environment of the command.
 
@@ -133,4 +133,6 @@ ace versions that only know v1 cannot read v2 blocks.
 ## Security Considerations
 
 ACE leans on the simple and reliable age-encryption.org. The security of this implementation has not been vetted by security professionals, and keeping keys secure is outside of the scope of this tool.
+
+Note that only values are encrypted: variable names (and the number and size of values) are visible in plain text to anyone who can read the file. Do not put sensitive information in variable names.
 

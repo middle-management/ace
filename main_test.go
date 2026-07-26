@@ -7,10 +7,14 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
+	"unicode"
 
 	"github.com/middle-management/ace/internal/test"
 )
@@ -293,6 +297,56 @@ func TestAce(t *testing.T) {
 		}
 	})
 
+	t.Run("set with invalid key writes nothing", func(t *testing.T) {
+		for name, pair := range map[string]string{
+			"newline":    "A\nB=1",
+			"space":      "A B=1",
+			"tab":        "A\tB=1",
+			"comment":    "#A=1",
+			"empty name": "=1",
+		} {
+			t.Run(name, func(t *testing.T) {
+				os.Remove("testdata/.env_invalid_key.ace")
+				cmd := &Set{EnvFile: "testdata/.env_invalid_key.ace", RecipientFiles: []string{"testdata/recipients1.txt"}, EnvPairs: []string{pair}}
+				err := cmd.Run()
+				if err == nil {
+					t.Fatalf("expected an error for key of %q, but none occurred", pair)
+				}
+				if _, err := os.Stat("testdata/.env_invalid_key.ace"); !errors.Is(err, fs.ErrNotExist) {
+					t.Fatal("expected no file to be written when a key is invalid")
+				}
+			})
+		}
+	})
+
+	t.Run("get missing key fails", func(t *testing.T) {
+		os.Remove("testdata/.env_missing_key.ace")
+		{
+			cmd := &Set{EnvFile: "testdata/.env_missing_key.ace", RecipientFiles: []string{"testdata/recipients1.txt"}, EnvPairs: []string{"A=1"}}
+			if err := cmd.Run(); err != nil {
+				t.Fatal(err)
+			}
+		}
+		{
+			buf := &bytes.Buffer{}
+			output = buf
+			cmd := &Get{EnvFile: "testdata/.env_missing_key.ace", Identities: []string{"testdata/identity1"}, Keys: []string{"A", "NOPE"}}
+			err := cmd.Run()
+			if err == nil || !strings.Contains(err.Error(), "NOPE") {
+				t.Fatalf("expected an error naming the missing key, got %v", err)
+			}
+			if got, want := buf.String(), "A=1\n"; got != want {
+				t.Fatalf("expected the readable keys to still be printed, got %q want %q", got, want)
+			}
+		}
+		{
+			cmd := &Get{EnvFile: "testdata/.env_missing_key.ace", Identities: []string{"testdata/identity1"}, Keys: []string{"A"}}
+			if err := cmd.Run(); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+
 	t.Run("set with no pairs writes nothing", func(t *testing.T) {
 		os.Remove("testdata/.env_no_pairs.ace")
 		input = strings.NewReader("# only a comment\nno equals sign\n")
@@ -458,6 +512,32 @@ func TestAce(t *testing.T) {
 				t.Fatalf("expected no output, got %q", buf.String())
 			}
 		})
+	})
+
+	t.Run("rotate preserves file permissions", func(t *testing.T) {
+		os.Remove("testdata/.env_rotate_mode.ace")
+		{
+			cmd := &Set{EnvFile: "testdata/.env_rotate_mode.ace", RecipientFiles: []string{"testdata/recipients1.txt"}, EnvPairs: []string{"A=1"}}
+			if err := cmd.Run(); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.Chmod("testdata/.env_rotate_mode.ace", 0600); err != nil {
+			t.Fatal(err)
+		}
+		{
+			cmd := &Rotate{EnvFile: "testdata/.env_rotate_mode.ace", RecipientFiles: []string{"testdata/recipients1.txt"}, Identities: []string{"testdata/identity1"}}
+			if err := cmd.Run(); err != nil {
+				t.Fatal(err)
+			}
+		}
+		fi, err := os.Stat("testdata/.env_rotate_mode.ace")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := fi.Mode().Perm(), os.FileMode(0600); got != want {
+			t.Fatalf("expected rotate to preserve mode %v, got %v", want, got)
+		}
 	})
 
 	t.Run("rotate refuses when a block cannot be decrypted", func(t *testing.T) {
@@ -655,6 +735,8 @@ func TestIntegration(t *testing.T) {
 		{0, []string{"rm", "-f", "testdata/.envi3.ace"}, nil},
 		{0, []string{"ace", "set", "-e=testdata/.envi3.ace", "-R=testdata/recipients1.txt", "A=1", "B=2", "C=1 2 3 "}, nil},
 		{0, []string{"ace", "get", "-e=testdata/.envi3.ace", "-i=testdata/identity1", "A"}, nil},
+		{1, []string{"ace", "get", "-e=testdata/.envi3.ace", "-i=testdata/identity1", "A", "NOPE"}, nil},
+		{1, []string{"ace", "set", "-e=testdata/.envi3.ace", "-R=testdata/recipients1.txt", "BAD KEY=1"}, nil},
 
 		{0, []string{"rm", "-f", "testdata/.envi4.ace"}, nil},
 		{0, []string{"ace", "set", "-e=testdata/.envi4.ace", "-R=testdata/recipients1.txt", "-R=testdata/recipients2.txt", "A=1", "B=2", "C=1 2 3 "}, nil},
@@ -714,6 +796,7 @@ func TestIntegration(t *testing.T) {
 		{0, []string{"ace", "env", "-e=testdata/.env1.ace", "-i=testdata/identity1", "--", "sh", "-c", "exit 0"}, nil},
 		{1, []string{"ace", "env", "-e=testdata/.env1.ace", "-i=testdata/identity1", "--", "sh", "-c", "exit 1"}, nil},
 		{42, []string{"ace", "env", "-e=testdata/.env1.ace", "-i=testdata/identity1", "--", "sh", "-c", "exit 42"}, nil},
+		{143, []string{"ace", "env", "-e=testdata/.env1.ace", "-i=testdata/identity1", "--", "sh", "-c", "kill -TERM $$"}, nil},
 	}
 	coverDir := os.Getenv("GOCOVERDIR")
 	if coverDir == "" {
@@ -749,6 +832,77 @@ func TestIntegration(t *testing.T) {
 			t.Log(err)
 		}
 		test.Snapshot(t, out)
+	})
+}
+
+// TestSignalForwarding checks that a signal sent to ace itself (not the
+// terminal foreground group, e.g. docker stop signalling PID 1) reaches
+// the child, and that the child's exit code is propagated
+func TestSignalForwarding(t *testing.T) {
+	bin := os.Getenv("ACE_TESTBIN")
+	if bin == "" {
+		t.Skip("Not running integration tests")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("signal forwarding is POSIX-only")
+	}
+
+	ready := filepath.Join(t.TempDir(), "ready")
+	cmd := exec.Command(bin, "env", "--on-missing=ignore", "-e=testdata/.env.absent.ace", "--",
+		"sh", "-c", `trap 'exit 7' TERM; : > "$READY"; sleep 30 & wait $!`)
+	cmd.Env = append(os.Environ(), "READY="+ready)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if _, err := os.Stat(ready); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			cmd.Process.Kill()
+			t.Fatal("child shell never became ready")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) || exitErr.ExitCode() != 7 {
+			t.Fatalf("expected exit code 7 from the child's TERM trap, got %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		cmd.Process.Kill()
+		t.Fatal("ace did not exit after SIGTERM, signal was not forwarded")
+	}
+}
+
+func FuzzUnescapeValue(f *testing.F) {
+	for _, seed := range []string{
+		"", "plain value", `"double quoted"`, `'single quoted'`,
+		`"escaped \" quote"`, "\"multi\nline\"", `'unclosed`, `"trailing \`,
+		`  "leading space"`, `mixed 'quotes' "here"`, `back\slash`,
+	} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, value string) {
+		unescaped, err := UnescapeValue(value)
+		if err != nil {
+			return
+		}
+		// values that don't start with a quote must pass through unchanged
+		trimmed := strings.TrimLeftFunc(value, unicode.IsSpace)
+		if len(trimmed) > 0 && trimmed[0] != '\'' && trimmed[0] != '"' && unescaped != value {
+			t.Fatalf("unquoted value %q was altered to %q", value, unescaped)
+		}
 	})
 }
 

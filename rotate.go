@@ -3,15 +3,18 @@ package main
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"filippo.io/age"
 )
 
 type Rotate struct {
 	RecipientFiles []string `arg:"--recipient-file,-R,separate" help:"Encrypt to recipients listed at RECIPIENT-FILE. Can be repeated. Defaults to ./recipients.txt"`
 	Recipients     []string `arg:"--recipient,-r,separate" help:"Encrypt to the specified RECIPIENT. Can be repeated."`
-	EnvFile        string   `arg:"--env-file,-e" default:"./.env.ace"`
+	EnvFile        string   `arg:"--env-file,-e" default:"./.env.ace" help:"Rewrite this file with the re-encrypted variables"`
 	Identities     []string `arg:"--identity,-i,separate" help:"Decrypt using the specified IDENTITY. Can be repeated. Defaults to $XDG_CONFIG_HOME/ace/identity"`
 }
 
@@ -36,7 +39,11 @@ func (cmd *Rotate) Run() error {
 			return nil, envFileStats{}, err
 		}
 		defer src.Close()
-		return readEnvFile(src, identities, true)
+		vars, stats, err := readEnvFile(src, identities, true)
+		if err != nil {
+			err = fmt.Errorf("%s: %w", cmd.EnvFile, err)
+		}
+		return vars, stats, err
 	}()
 	if err != nil {
 		return err
@@ -44,6 +51,8 @@ func (cmd *Rotate) Run() error {
 	if stats.matched < stats.blocks {
 		return fmt.Errorf("refusing to rotate: %d of %d blocks could not be decrypted with the available identities, their vars would be lost", stats.blocks-stats.matched, stats.blocks)
 	}
+
+	warnOnSelfLockout(identities, recipients)
 
 	var kvs [][2]string
 	for _, kv := range vars {
@@ -62,6 +71,12 @@ func (cmd *Rotate) Run() error {
 		}
 	}
 
+	// keep the permissions of the file being replaced
+	mode := os.FileMode(0644)
+	if fi, err := os.Stat(cmd.EnvFile); err == nil {
+		mode = fi.Mode().Perm()
+	}
+
 	// write to a temp file in the same directory and rename it over the
 	// original, so a failed rotation never leaves a truncated env file
 	tmp, err := os.CreateTemp(filepath.Dir(cmd.EnvFile), filepath.Base(cmd.EnvFile)+".rotate*")
@@ -74,7 +89,11 @@ func (cmd *Rotate) Run() error {
 		tmp.Close()
 		return err
 	}
-	if err := tmp.Chmod(0644); err != nil {
+	if err := tmp.Chmod(mode); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
 		tmp.Close()
 		return err
 	}
@@ -83,4 +102,25 @@ func (cmd *Rotate) Run() error {
 	}
 
 	return os.Rename(tmp.Name(), cmd.EnvFile)
+}
+
+// warnOnSelfLockout warns when none of the identities that just decrypted
+// the file are among the new recipients, since the rotated file would be
+// unreadable to the caller. Only X25519 keys can be compared, so the check
+// is skipped when any other recipient type is present.
+func warnOnSelfLockout(identities []age.Identity, recipients []age.Recipient) {
+	recSet := map[string]bool{}
+	for _, r := range recipients {
+		x, ok := r.(*age.X25519Recipient)
+		if !ok {
+			return
+		}
+		recSet[x.String()] = true
+	}
+	for _, id := range identities {
+		if x, ok := id.(*age.X25519Identity); ok && recSet[x.Recipient().String()] {
+			return
+		}
+	}
+	slog.Warn("none of the identities are among the new recipients, the rotated file will not be readable with them")
 }

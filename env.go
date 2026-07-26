@@ -60,7 +60,7 @@ func (cmd *Env) Run() error {
 		} else {
 			vars, _, err = readEnvFile(src, identities, false)
 			if err != nil {
-				return err
+				return fmt.Errorf("%s: %w", cmd.EnvFile, err)
 			}
 		}
 	}
@@ -70,6 +70,7 @@ func (cmd *Env) Run() error {
 	c.Stdin = os.Stdin
 	c.Stderr = os.Stderr
 	c.Stdout = output
+	proc.SetupSysProcAttr(c)
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
@@ -86,5 +87,21 @@ func (cmd *Env) Run() error {
 		}
 	}()
 
-	return c.Run()
+	err = c.Run()
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ProcessState != nil {
+		return &childExitError{err: err, code: proc.ExitCode(exitErr.ProcessState)}
+	}
+	return err
 }
+
+// childExitError propagates the child's exit code to main, mapping
+// signal-terminated children to the shell convention of 128+signal
+type childExitError struct {
+	err  error
+	code int
+}
+
+func (e *childExitError) Error() string { return e.err.Error() }
+func (e *childExitError) Unwrap() error { return e.err }
+func (e *childExitError) ExitCode() int { return e.code }
