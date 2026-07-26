@@ -15,3 +15,7 @@ func setupSysProcAttr(cmd *exec.Cmd) {
 func forwardSignal(cmd *exec.Cmd, sig os.Signal) {
 	cmd.Process.Signal(sig)
 }
+
+func exitCode(ps *os.ProcessState) int {
+	return ps.ExitCode()
+}
