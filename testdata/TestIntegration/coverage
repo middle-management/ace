@@ -9,7 +9,8 @@ github.com/middle-management/ace/main.go:80:			readEnvFile			84.7%
 github.com/middle-management/ace/main.go:201:			readIdentities			66.7%
 github.com/middle-management/ace/main.go:261:			UnescapeValue			80.8%
 github.com/middle-management/ace/main.go:351:			main				100.0%
-github.com/middle-management/ace/rotate.go:22:			*Rotate.Run			70.0%
+github.com/middle-management/ace/rotate.go:25:			*Rotate.Run			70.0%
+github.com/middle-management/ace/rotate.go:111:			warnOnSelfLockout		80.0%
 github.com/middle-management/ace/set.go:30:			validateKey			75.0%
 github.com/middle-management/ace/set.go:45:			parseRecipients			100.0%
 github.com/middle-management/ace/set.go:77:			encryptBlock			78.6%
