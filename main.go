@@ -21,11 +21,11 @@ import (
 )
 
 type Main struct {
-	Env     *Env     `arg:"subcommand:env" help:"Run a command with the decrypted env vars added to its environment"`
-	Get     *Get     `arg:"subcommand:get" help:"Decrypt and print env vars"`
-	Set     *Set     `arg:"subcommand:set" help:"Encrypt env vars and append them to the env file"`
-	Rotate  *Rotate  `arg:"subcommand:rotate" help:"Re-encrypt all env vars into a single block for the given recipients, replacing the env file"`
-	Version *Version `arg:"subcommand:version" help:"Print version"`
+	Env    *Env     `arg:"subcommand:env" help:"Run a command with the decrypted env vars added to its environment"`
+	Get    *Get     `arg:"subcommand:get" help:"Decrypt and print env vars"`
+	Set    *Set     `arg:"subcommand:set" help:"Encrypt env vars and append them to the env file"`
+	Rotate *Rotate  `arg:"subcommand:rotate" help:"Re-encrypt all env vars into a single block for the given recipients, replacing the env file"`
+	Ver    *Version `arg:"subcommand:version" help:"Print version"`
 }
 
 func (Main) Description() string {
@@ -38,6 +38,14 @@ recipients can append new values, but only holders of a matching identity
 (private key) can decrypt them. Values are never modified in place: setting
 an existing key appends a new value, and the latest value wins when reading.
 `
+}
+
+// Version makes go-arg support --version in addition to the subcommand
+func (Main) Version() string {
+	if version == "" {
+		return "ace " + getVersion()
+	}
+	return "ace " + version
 }
 
 func (Main) Epilogue() string {
@@ -373,9 +381,9 @@ func main() {
 			return args.Set.Run()
 		case args.Rotate != nil:
 			return args.Rotate.Run()
-		case args.Version != nil:
-			args.Version.version = version
-			return args.Version.Run()
+		case args.Ver != nil:
+			args.Ver.version = version
+			return args.Ver.Run()
 		default:
 			p.WriteHelp(os.Stderr)
 			return nil
