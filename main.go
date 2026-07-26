@@ -87,7 +87,9 @@ func readEnvFile(src io.Reader, identities []age.Identity, keepQuotes bool) ([]s
 	s.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
 	var aead cipher.AEAD
 	var bindKey bool
+	var lineNo int
 	for s.Scan() {
+		lineNo++
 		line := strings.TrimSpace(s.Text())
 
 		// split on block prefix
@@ -101,14 +103,14 @@ func readEnvFile(src io.Reader, identities []age.Identity, keepQuotes bool) ([]s
 				prefix = ACE_PREFIX_V2
 				bindKey = true
 			default:
-				return nil, stats, fmt.Errorf("unsupported block version %q, upgrade ace to read this file", strings.SplitN(line, ":", 2)[0])
+				return nil, stats, fmt.Errorf("line %d: unsupported block version %q, upgrade ace to read this file", lineNo, strings.SplitN(line, ":", 2)[0])
 			}
 			stats.blocks++
 
 			// base32decode and armor decode age header
 			header, err := base32.StdEncoding.DecodeString(strings.TrimPrefix(line, prefix))
 			if err != nil {
-				return nil, stats, err
+				return nil, stats, fmt.Errorf("line %d: block header: %w", lineNo, err)
 			}
 
 			var r io.Reader
@@ -122,15 +124,15 @@ func readEnvFile(src io.Reader, identities []age.Identity, keepQuotes bool) ([]s
 				aead = nil
 				continue
 			} else if err != nil {
-				return nil, stats, err
+				return nil, stats, fmt.Errorf("line %d: block header: %w", lineNo, err)
 			}
 			blockKey, err := io.ReadAll(r)
 			if err != nil {
-				return nil, stats, err
+				return nil, stats, fmt.Errorf("line %d: block header: %w", lineNo, err)
 			}
 			aead, err = chacha20poly1305.NewX(blockKey)
 			if err != nil {
-				return nil, stats, err
+				return nil, stats, fmt.Errorf("line %d: block header: %w", lineNo, err)
 			}
 			stats.matched++
 		}
@@ -151,11 +153,11 @@ func readEnvFile(src io.Reader, identities []age.Identity, keepQuotes bool) ([]s
 
 		secret, err := base32.StdEncoding.DecodeString(pair[1])
 		if err != nil {
-			return nil, stats, err
+			return nil, stats, fmt.Errorf("line %d: %s: %w", lineNo, pair[0], err)
 		}
 
 		if len(secret) < aead.NonceSize() {
-			return nil, stats, fmt.Errorf("ciphertext too short")
+			return nil, stats, fmt.Errorf("line %d: %s: ciphertext too short", lineNo, pair[0])
 		}
 		nonce, ciphertext := secret[:aead.NonceSize()], secret[aead.NonceSize():]
 
@@ -167,7 +169,7 @@ func readEnvFile(src io.Reader, identities []age.Identity, keepQuotes bool) ([]s
 		// Decrypt the message and check it wasn't tampered with.
 		plaintext, err := aead.Open(nil, nonce, ciphertext, aad)
 		if err != nil {
-			return nil, stats, err
+			return nil, stats, fmt.Errorf("line %d: %s: %w", lineNo, pair[0], err)
 		}
 
 		if _, exists := vals[pair[0]]; !exists {

@@ -60,7 +60,7 @@ func (cmd *Env) Run() error {
 		} else {
 			vars, _, err = readEnvFile(src, identities, false)
 			if err != nil {
-				return err
+				return fmt.Errorf("%s: %w", cmd.EnvFile, err)
 			}
 		}
 	}
