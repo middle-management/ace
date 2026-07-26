@@ -583,8 +583,8 @@ func TestAce(t *testing.T) {
 		}
 		cmd := &Get{EnvFile: "testdata/.env_future.ace", Identities: []string{"testdata/identity1"}}
 		err := cmd.Run()
-		if err == nil || !strings.Contains(err.Error(), "unsupported block version") {
-			t.Fatalf("expected unsupported block version error, got %v", err)
+		if err == nil || !strings.Contains(err.Error(), "line 1: unsupported block version") {
+			t.Fatalf("expected unsupported block version error with line context, got %v", err)
 		}
 	})
 
