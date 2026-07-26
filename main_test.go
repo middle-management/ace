@@ -514,6 +514,32 @@ func TestAce(t *testing.T) {
 		})
 	})
 
+	t.Run("rotate preserves file permissions", func(t *testing.T) {
+		os.Remove("testdata/.env_rotate_mode.ace")
+		{
+			cmd := &Set{EnvFile: "testdata/.env_rotate_mode.ace", RecipientFiles: []string{"testdata/recipients1.txt"}, EnvPairs: []string{"A=1"}}
+			if err := cmd.Run(); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.Chmod("testdata/.env_rotate_mode.ace", 0600); err != nil {
+			t.Fatal(err)
+		}
+		{
+			cmd := &Rotate{EnvFile: "testdata/.env_rotate_mode.ace", RecipientFiles: []string{"testdata/recipients1.txt"}, Identities: []string{"testdata/identity1"}}
+			if err := cmd.Run(); err != nil {
+				t.Fatal(err)
+			}
+		}
+		fi, err := os.Stat("testdata/.env_rotate_mode.ace")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := fi.Mode().Perm(), os.FileMode(0600); got != want {
+			t.Fatalf("expected rotate to preserve mode %v, got %v", want, got)
+		}
+	})
+
 	t.Run("rotate refuses when a block cannot be decrypted", func(t *testing.T) {
 		os.Remove("testdata/.env_rotate_refuse.ace")
 		{
