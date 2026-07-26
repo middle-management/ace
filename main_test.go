@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"testing"
 	"time"
+	"unicode"
 
 	"github.com/middle-management/ace/internal/test"
 )
@@ -293,6 +294,28 @@ func TestAce(t *testing.T) {
 		}
 		if _, err := os.Stat("testdata/.env_invalid_pair.ace"); !errors.Is(err, fs.ErrNotExist) {
 			t.Fatal("expected no file to be written when a pair is invalid")
+		}
+	})
+
+	t.Run("set with invalid key writes nothing", func(t *testing.T) {
+		for name, pair := range map[string]string{
+			"newline":    "A\nB=1",
+			"space":      "A B=1",
+			"tab":        "A\tB=1",
+			"comment":    "#A=1",
+			"empty name": "=1",
+		} {
+			t.Run(name, func(t *testing.T) {
+				os.Remove("testdata/.env_invalid_key.ace")
+				cmd := &Set{EnvFile: "testdata/.env_invalid_key.ace", RecipientFiles: []string{"testdata/recipients1.txt"}, EnvPairs: []string{pair}}
+				err := cmd.Run()
+				if err == nil {
+					t.Fatalf("expected an error for key of %q, but none occurred", pair)
+				}
+				if _, err := os.Stat("testdata/.env_invalid_key.ace"); !errors.Is(err, fs.ErrNotExist) {
+					t.Fatal("expected no file to be written when a key is invalid")
+				}
+			})
 		}
 	})
 
@@ -640,6 +663,7 @@ func TestIntegration(t *testing.T) {
 		{1, []string{"ace", "set", "-e=testdata/.env.invalid.ace", "A=1", "B=2"}, nil},
 		{1, []string{"ace", "get", "-e=testdata/.env.invalid.ace", "-i=testdata/nonexistent_identity.txt"}, nil},
 		{1, []string{"ace", "set", "-e=testdata/.env1.ace", "-r=invalid"}, nil},
+		{1, []string{"ace", "set", "-e=testdata/.env1.ace", "-R=testdata/recipients1.txt", "BAD KEY=1"}, nil},
 		{0, []string{"ace", "env", "-e=testdata/.env.invalid.ace", "-i=testdata/identity1", "--on-missing=warn", "--", "sh", "-c", "echo $A"}, nil},
 		{0, []string{"ace", "env", "-e=testdata/.env.invalid.ace", "-i=testdata/identity1", "--on-missing=ignore", "--", "sh", "-c", "echo $A"}, nil},
 		{1, []string{"ace", "env", "-e=testdata/.env.invalid.ace", "--", "sh", "-c", "echo $A"}, nil},
@@ -804,6 +828,27 @@ func TestSignalForwarding(t *testing.T) {
 		cmd.Process.Kill()
 		t.Fatal("ace did not exit after SIGTERM, signal was not forwarded")
 	}
+}
+
+func FuzzUnescapeValue(f *testing.F) {
+	for _, seed := range []string{
+		"", "plain value", `"double quoted"`, `'single quoted'`,
+		`"escaped \" quote"`, "\"multi\nline\"", `'unclosed`, `"trailing \`,
+		`  "leading space"`, `mixed 'quotes' "here"`, `back\slash`,
+	} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, value string) {
+		unescaped, err := UnescapeValue(value)
+		if err != nil {
+			return
+		}
+		// values that don't start with a quote must pass through unchanged
+		trimmed := strings.TrimLeftFunc(value, unicode.IsSpace)
+		if len(trimmed) > 0 && trimmed[0] != '\'' && trimmed[0] != '"' && unescaped != value {
+			t.Fatalf("unquoted value %q was altered to %q", value, unescaped)
+		}
+	})
 }
 
 func sanitizeTestName(name string) string {

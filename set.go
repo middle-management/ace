@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/base32"
+	"fmt"
 	"io"
 	"os"
 	"strings"
+	"unicode"
 
 	"filippo.io/age"
 	"golang.org/x/crypto/chacha20poly1305"
@@ -17,6 +19,27 @@ type Set struct {
 	Recipients     []string `arg:"--recipient,-r,separate" help:"Encrypt to the specified RECIPIENT. Can be repeated."`
 	EnvFile        string   `arg:"--env-file,-e" default:"./.env.ace" help:"Append the encrypted variables to this file"`
 	EnvPairs       []string `arg:"positional" placeholder:"KEY=VALUE" help:"Variables to encrypt. When none are given they are read from stdin in .env format, which keeps values out of shell history"`
+}
+
+// validateKey rejects variable names that would corrupt the env file:
+// names are stored in plain text in a line-oriented format, so a newline
+// would split the entry (making the whole file undecryptable, since the
+// name is bound into the value's AEAD), other whitespace or control
+// characters produce entries the format cannot represent, and a leading
+// '#' would be skipped as a comment when reading
+func validateKey(key string) error {
+	if key == "" {
+		return fmt.Errorf("empty variable name")
+	}
+	if key[0] == '#' {
+		return fmt.Errorf("invalid variable name %q: must not start with '#'", key)
+	}
+	for _, r := range key {
+		if unicode.IsSpace(r) || unicode.IsControl(r) {
+			return fmt.Errorf("invalid variable name %q: must not contain whitespace or control characters", key)
+		}
+	}
+	return nil
 }
 
 func parseRecipients(recs []string, files []string) ([]age.Recipient, error) {
@@ -149,6 +172,9 @@ func (cmd *Set) Run() error {
 		pair := strings.SplitN(p, "=", 2)
 		if len(pair) != 2 {
 			continue
+		}
+		if err := validateKey(pair[0]); err != nil {
+			return err
 		}
 		if _, err := UnescapeValue(pair[1]); err != nil {
 			return err
