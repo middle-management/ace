@@ -714,6 +714,7 @@ func TestIntegration(t *testing.T) {
 	}{
 		{0, []string{"ace"}, nil},
 		{0, []string{"ace", "version"}, nil},
+		{0, []string{"ace", "--version"}, nil},
 		{1, []string{"ace", "set", "-e=testdata/.env.invalid.ace", "A=1", "B=2"}, nil},
 		{1, []string{"ace", "get", "-e=testdata/.env.invalid.ace", "-i=testdata/nonexistent_identity.txt"}, nil},
 		{1, []string{"ace", "set", "-e=testdata/.env1.ace", "-r=invalid"}, nil},

@@ -134,3 +134,5 @@ ace versions that only know v1 cannot read v2 blocks.
 
 ACE leans on the simple and reliable age-encryption.org. The security of this implementation has not been vetted by security professionals, and keeping keys secure is outside of the scope of this tool.
 
+Note that only values are encrypted: variable names (and the number and size of values) are visible in plain text to anyone who can read the file. Do not put sensitive information in variable names.
+
