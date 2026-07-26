@@ -7,8 +7,11 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -714,6 +717,7 @@ func TestIntegration(t *testing.T) {
 		{0, []string{"ace", "env", "-e=testdata/.env1.ace", "-i=testdata/identity1", "--", "sh", "-c", "exit 0"}, nil},
 		{1, []string{"ace", "env", "-e=testdata/.env1.ace", "-i=testdata/identity1", "--", "sh", "-c", "exit 1"}, nil},
 		{42, []string{"ace", "env", "-e=testdata/.env1.ace", "-i=testdata/identity1", "--", "sh", "-c", "exit 42"}, nil},
+		{143, []string{"ace", "env", "-e=testdata/.env1.ace", "-i=testdata/identity1", "--", "sh", "-c", "kill -TERM $$"}, nil},
 	}
 	coverDir := os.Getenv("GOCOVERDIR")
 	if coverDir == "" {
@@ -750,6 +754,56 @@ func TestIntegration(t *testing.T) {
 		}
 		test.Snapshot(t, out)
 	})
+}
+
+// TestSignalForwarding checks that a signal sent to ace itself (not the
+// terminal foreground group, e.g. docker stop signalling PID 1) reaches
+// the child, and that the child's exit code is propagated
+func TestSignalForwarding(t *testing.T) {
+	bin := os.Getenv("ACE_TESTBIN")
+	if bin == "" {
+		t.Skip("Not running integration tests")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("signal forwarding is POSIX-only")
+	}
+
+	ready := filepath.Join(t.TempDir(), "ready")
+	cmd := exec.Command(bin, "env", "--on-missing=ignore", "-e=testdata/.env.absent.ace", "--",
+		"sh", "-c", `trap 'exit 7' TERM; : > "$READY"; sleep 30 & wait $!`)
+	cmd.Env = append(os.Environ(), "READY="+ready)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if _, err := os.Stat(ready); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			cmd.Process.Kill()
+			t.Fatal("child shell never became ready")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) || exitErr.ExitCode() != 7 {
+			t.Fatalf("expected exit code 7 from the child's TERM trap, got %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		cmd.Process.Kill()
+		t.Fatal("ace did not exit after SIGTERM, signal was not forwarded")
+	}
 }
 
 func sanitizeTestName(name string) string {
