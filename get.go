@@ -26,16 +26,17 @@ func (cmd *Get) Run() error {
 
 	vars, _, err := readEnvFile(src, identities, true)
 	if err != nil {
-		return err
+		return fmt.Errorf("%s: %w", cmd.EnvFile, err)
 	}
 
+	found := make(map[string]bool, len(cmd.Keys))
 	for _, kv := range vars {
 		if len(cmd.Keys) > 0 {
 			var match bool
 			for _, k := range cmd.Keys {
 				if strings.HasPrefix(kv, k+"=") {
 					match = true
-					break
+					found[k] = true
 				}
 			}
 			if !match {
@@ -43,6 +44,19 @@ func (cmd *Get) Run() error {
 			}
 		}
 		fmt.Fprintln(output, kv)
+	}
+
+	// fail when a requested key has no readable value, so scripts can
+	// distinguish an unset variable from an empty one
+	var missing []string
+	for _, k := range cmd.Keys {
+		if !found[k] {
+			found[k] = true // dedupe repeated keys
+			missing = append(missing, k)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("no readable value for: %s", strings.Join(missing, ", "))
 	}
 
 	return nil
