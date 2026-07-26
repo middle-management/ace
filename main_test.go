@@ -319,6 +319,34 @@ func TestAce(t *testing.T) {
 		}
 	})
 
+	t.Run("get missing key fails", func(t *testing.T) {
+		os.Remove("testdata/.env_missing_key.ace")
+		{
+			cmd := &Set{EnvFile: "testdata/.env_missing_key.ace", RecipientFiles: []string{"testdata/recipients1.txt"}, EnvPairs: []string{"A=1"}}
+			if err := cmd.Run(); err != nil {
+				t.Fatal(err)
+			}
+		}
+		{
+			buf := &bytes.Buffer{}
+			output = buf
+			cmd := &Get{EnvFile: "testdata/.env_missing_key.ace", Identities: []string{"testdata/identity1"}, Keys: []string{"A", "NOPE"}}
+			err := cmd.Run()
+			if err == nil || !strings.Contains(err.Error(), "NOPE") {
+				t.Fatalf("expected an error naming the missing key, got %v", err)
+			}
+			if got, want := buf.String(), "A=1\n"; got != want {
+				t.Fatalf("expected the readable keys to still be printed, got %q want %q", got, want)
+			}
+		}
+		{
+			cmd := &Get{EnvFile: "testdata/.env_missing_key.ace", Identities: []string{"testdata/identity1"}, Keys: []string{"A"}}
+			if err := cmd.Run(); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+
 	t.Run("set with no pairs writes nothing", func(t *testing.T) {
 		os.Remove("testdata/.env_no_pairs.ace")
 		input = strings.NewReader("# only a comment\nno equals sign\n")
@@ -682,6 +710,7 @@ func TestIntegration(t *testing.T) {
 		{0, []string{"rm", "-f", "testdata/.envi3.ace"}, nil},
 		{0, []string{"ace", "set", "-e=testdata/.envi3.ace", "-R=testdata/recipients1.txt", "A=1", "B=2", "C=1 2 3 "}, nil},
 		{0, []string{"ace", "get", "-e=testdata/.envi3.ace", "-i=testdata/identity1", "A"}, nil},
+		{1, []string{"ace", "get", "-e=testdata/.envi3.ace", "-i=testdata/identity1", "A", "NOPE"}, nil},
 
 		{0, []string{"rm", "-f", "testdata/.envi4.ace"}, nil},
 		{0, []string{"ace", "set", "-e=testdata/.envi4.ace", "-R=testdata/recipients1.txt", "-R=testdata/recipients2.txt", "A=1", "B=2", "C=1 2 3 "}, nil},
