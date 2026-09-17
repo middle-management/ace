@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode"
 
+	"filippo.io/age"
 	"github.com/middle-management/ace/internal/test"
 )
 
@@ -883,6 +884,30 @@ func TestSignalForwarding(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		cmd.Process.Kill()
 		t.Fatal("ace did not exit after SIGTERM, signal was not forwarded")
+	}
+}
+
+func TestDefaultIdentityHonoursXDGConfigHome(t *testing.T) {
+	configHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+
+	id, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(configHome, "ace"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configHome, "ace", "identity"), []byte(id.String()+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	identities, err := readIdentities(nil, "error")
+	if err != nil {
+		t.Fatalf("expected default identity path to resolve under XDG_CONFIG_HOME, got: %v", err)
+	}
+	if len(identities) != 1 {
+		t.Fatalf("expected 1 identity, got %d", len(identities))
 	}
 }
 
