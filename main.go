@@ -213,10 +213,10 @@ func readIdentities(idents []string, onMissing string) ([]age.Identity, error) {
 	configDir, configDirErr := os.UserConfigDir()
 
 	if len(idents) == 0 {
-		if configDirErr != nil {
+		if _, set := os.LookupEnv("XDG_CONFIG_HOME"); set && configDirErr != nil {
 			return nil, fmt.Errorf("unable to read user config dir: %w", configDirErr)
 		}
-		idents = []string{filepath.Join(configDir, "ace", "identity")}
+		idents = []string{filepath.Join("$XDG_CONFIG_HOME", "ace", "identity")}
 	}
 
 	// expand like os.ExpandEnv, but resolve $XDG_CONFIG_HOME even when unset
