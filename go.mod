@@ -6,7 +6,7 @@ require (
 	filippo.io/age v1.3.2
 	github.com/alexflint/go-arg v1.6.1
 	golang.org/x/crypto v0.56.0
-	golang.org/x/sys v0.47.0
+	golang.org/x/sys v0.48.0
 )
 
 require (
